@@ -14,7 +14,7 @@ type AppConfig =
 
   static member private defaultPrefix = Prefix ""
   static member private defaultSeparator = Separator ""
-
+  static member private defaultListSeparator = Separator ","
   static member private fieldNameCanonicalizer customPrefix (Separator separator) : FieldNameCanonicalizer = 
     fun prefix name -> 
       let actualPrefix =
@@ -27,14 +27,18 @@ type AppConfig =
 
 
   static member Get<'T when 'T :> IConvertible> (appSettingsName : string) = 
-    parse<'T> AppConfig.configReader AppConfig.defaultFieldNameCanonicalizer appSettingsName
+    let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> AppConfig.defaultPrefix AppConfig.defaultSeparator AppConfig.defaultListSeparator
+    parse<'T> AppConfig.configReader AppConfig.defaultFieldNameCanonicalizer listSeparator appSettingsName
 
   static member Get<'T when 'T : not struct> () =
+    let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> AppConfig.defaultPrefix AppConfig.defaultSeparator AppConfig.defaultListSeparator
     let fieldNameCanonicalizer = 
-      let (prefix, separator) = 
-        getPrefixAndSeparator<'T> AppConfig.defaultPrefix AppConfig.defaultSeparator
       AppConfig.fieldNameCanonicalizer prefix separator
-    parse<'T> AppConfig.configReader fieldNameCanonicalizer ""
+    parse<'T> AppConfig.configReader fieldNameCanonicalizer listSeparator ""
 
   static member Get<'T when 'T : not struct> (fieldNameCanonicalizer : FieldNameCanonicalizer) =
-    parse<'T> AppConfig.configReader fieldNameCanonicalizer "" 
+  let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> AppConfig.defaultPrefix AppConfig.defaultSeparator AppConfig.defaultListSeparator
+  parse<'T> AppConfig.configReader fieldNameCanonicalizer listSeparator "" 

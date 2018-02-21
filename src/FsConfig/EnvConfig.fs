@@ -21,19 +21,24 @@ type EnvConfig =
       |> sprintf "%s%s" actualPrefix
   static member private defaultPrefix = Prefix ""
   static member private defaultSeparator = Separator "_"
+  static member private defaultListSeparator = Separator ","
   static member private defaultFieldNameCanonicalizer =
     EnvConfig.fieldNameCanonicalizer EnvConfig.defaultPrefix EnvConfig.defaultSeparator
 
   static member Get<'T when 'T :> IConvertible> (envVarName : string) = 
-    parse<'T> EnvConfig.configReader EnvConfig.defaultFieldNameCanonicalizer envVarName
+    let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> EnvConfig.defaultPrefix EnvConfig.defaultSeparator EnvConfig.defaultListSeparator
+    parse<'T> EnvConfig.configReader EnvConfig.defaultFieldNameCanonicalizer listSeparator envVarName
 
   static member Get<'T when 'T : not struct> () =
+    let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> EnvConfig.defaultPrefix EnvConfig.defaultSeparator EnvConfig.defaultListSeparator
     let fieldNameCanonicalizer = 
-      let (prefix, separator) = 
-        getPrefixAndSeparator<'T> EnvConfig.defaultPrefix EnvConfig.defaultSeparator
       EnvConfig.fieldNameCanonicalizer prefix separator
-    parse<'T> EnvConfig.configReader fieldNameCanonicalizer ""
+    parse<'T> EnvConfig.configReader fieldNameCanonicalizer listSeparator ""
 
   static member Get<'T when 'T : not struct> (fieldNameCanonicalizer : FieldNameCanonicalizer) =
-    parse<'T> EnvConfig.configReader fieldNameCanonicalizer ""
+    let (prefix, separator, listSeparator) = 
+        getPrefixAndSeparators<'T> EnvConfig.defaultPrefix EnvConfig.defaultSeparator EnvConfig.defaultListSeparator
+    parse<'T> EnvConfig.configReader fieldNameCanonicalizer listSeparator ""
   

@@ -24,6 +24,7 @@ type ConventionAttribute(prefix : string) =
   inherit Attribute ()
   member val Prefix = prefix with get,set
   member val Separator = "" with get, set
+  member val ListSeparator = "" with get, set
 
 
 module internal Core =
@@ -39,7 +40,7 @@ module internal Core =
 
   type TryParse<'a> = string -> bool * 'a
 
-  let getPrefixAndSeparator<'T> defaultPrefix defaultSeparator =
+  let getPrefixAndSeparators<'T> defaultPrefix defaultSeparator defaultListSeparator =
     let conventionAttribute =
       typeof<'T>.GetCustomAttributes(typeof<ConventionAttribute>, true)
       |> Seq.tryHead
@@ -52,8 +53,12 @@ module internal Core =
           if (String.IsNullOrEmpty(attr.Separator)) then 
             defaultSeparator 
           else Separator attr.Separator
-        (prefix,separator)
-    | None -> (defaultPrefix,defaultSeparator)
+        let listSeparator =
+          if (String.IsNullOrEmpty(attr.ListSeparator)) then 
+            defaultListSeparator 
+          else Separator attr.ListSeparator        
+        (prefix,separator,listSeparator)
+    | None -> (defaultPrefix,defaultSeparator,defaultListSeparator)
 
   let findActualPrefix (Prefix customPrefix) (Separator separator) (Prefix prefix) =
     match (String.IsNullOrEmpty customPrefix, String.IsNullOrEmpty prefix) with
@@ -127,9 +132,11 @@ module internal Core =
           |> Result.map (fun v -> v :: xs)
         )
 
-  let parseFSharpList<'T> name value (fsharpList: IShapeFSharpList) =
+  let parseFSharpList<'T> listSeparator name value (fsharpList: IShapeFSharpList) =
     let wrap (p : ConfigParseResult<'a>) =
       unbox<ConfigParseResult<'T>> p
+    let (Separator listSeparatorString) = listSeparator
+    let listSplitter = (listSeparatorString.[0] |> char)
     fsharpList.Accept {
       new IFSharpListVisitor<ConfigParseResult<'T>> with
         member __.Visit<'t>() =
@@ -140,7 +147,7 @@ module internal Core =
           | Some (v : string) -> 
             match getTryParseFunc<'t> fsharpList.Element with
             | Some tryParseFunc -> 
-              v.Split(',') 
+              v.Split(listSplitter) 
               |> Array.map (fun s -> s.Trim())
               |> Array.filter (String.IsNullOrWhiteSpace >> not)
               |> Array.fold (parseListReducer name tryParseFunc) (Ok [])
@@ -160,16 +167,16 @@ module internal Core =
           tryParseWith name value (System.Enum.TryParse<'T>) |> wrap 
     }
 
-  let rec parse<'T> (configReader : IConfigReader) (fieldNameCanonicalizer : FieldNameCanonicalizer) name =
+  let rec parse<'T> (configReader : IConfigReader) (fieldNameCanonicalizer : FieldNameCanonicalizer) listSeparator name =
     let value = configReader.GetValue name
     let targetTypeShape = shapeof<'T>
     match targetTypeShape with
     | Shape.FSharpRecord (:? ShapeFSharpRecord<'T> as shape) ->
-      parseFSharpRecord configReader fieldNameCanonicalizer (Prefix name) shape
+      parseFSharpRecord configReader fieldNameCanonicalizer listSeparator (Prefix name) shape
     | Shape.FSharpOption fsharpOption -> 
       parseFSharpOption<'T> name value fsharpOption
     | Shape.FSharpList fsharpList ->
-      parseFSharpList<'T> name value fsharpList
+      parseFSharpList<'T> listSeparator name value fsharpList
     | Shape.Enum enumShape ->
       match value with
       | None -> NotFound name |> Error
@@ -181,7 +188,7 @@ module internal Core =
         | Some v -> tryParseWith name v tryParseFunc
         | None -> NotFound name |> Error
       | None -> notSupported name |> Error
-  and parseFSharpRecord (configReader : IConfigReader) (fieldNameCanonicalizer : FieldNameCanonicalizer) prefix shape =
+  and parseFSharpRecord (configReader : IConfigReader) (fieldNameCanonicalizer : FieldNameCanonicalizer) listSeparator prefix shape =
     let record = shape.CreateUninitialized()
     shape.Fields
     |> Seq.fold 
@@ -203,7 +210,7 @@ module internal Core =
           field.Accept {
             new IWriteMemberVisitor<'RecordType, ConfigParseResult<('RecordType -> 'RecordType) list>> with
               member __.Visit (shape : ShapeWriteMember<'RecordType, 'FieldType>) =
-                match parse<'FieldType> configReader fieldNameCanonicalizer configName with
+                match parse<'FieldType> configReader fieldNameCanonicalizer listSeparator configName with
                 | Ok fieldValue -> (fun record -> shape.Inject record fieldValue) :: xs |> Ok
                 | Error e -> Error e
           }
